@@ -7,7 +7,7 @@ import io
 import datetime as dt
 from sqlalchemy.exc import SQLAlchemyError
 
-QUERY_NAME = "ISSUE_ASSIGNEE"
+QUERY_NAME = "REPO_FILES"
 
 
 @celery_app.task(
@@ -17,18 +17,16 @@ QUERY_NAME = "ISSUE_ASSIGNEE"
     retry_kwargs={"max_retries": 5},
     retry_jitter=True,
 )
-def issue_assignee_query(self, repos):
+def repo_files_query(self, repos):
+
     """
     (Worker Query)
-    Executes SQL query against Augur database for contributor data.
-
-    Explorer_issue_assignments is a materialized view on the database for quicker run time and
-    may not be in your augur database. The SQL query content can be found
-    in docs/materialized_views/explorer_issue_assignments.sql
+    Executes SQL query against Augur database to get the repo file data.
 
     Args:
     -----
         repo_ids ([str]): repos that SQL query is executed on.
+
     Returns:
     --------
         dict: Results from SQL query, interpreted from pd.to_dict('records')
@@ -40,11 +38,18 @@ def issue_assignee_query(self, repos):
 
     query_string = f"""
                     SELECT
-                        *
-                    FROM
-                        explorer_issue_assignments ia
-                    WHERE
-                        ia.id in ({str(repos)[1:-1]})
+                    rl.repo_id AS id,
+                    r.repo_name,
+                    r.repo_path,
+                    rl.rl_analysis_date,
+                    rl.file_path,
+                    rl.file_name
+                FROM
+                    repo_labor rl,
+                    repo r
+                WHERE
+                    rl.repo_id = r.repo_id AND
+                    rl.repo_id in ({str(repos)[1:-1]})
                 """
 
     try:
@@ -60,14 +65,6 @@ def issue_assignee_query(self, repos):
         raise SQLAlchemyError("DBConnect failed")
 
     df = dbm.run_query(query_string)
-
-    # id as string and slice to remove excess 0s
-    df["assignee"] = df["assignee"].astype(str)
-    df["assignee"] = df["assignee"].str[:15]
-
-    # change to compatible type and remove all data that has been incorrectly formated
-    df["created"] = pd.to_datetime(df["created"], utc=True).dt.date
-    df = df[df.created < dt.date.today()]
 
     pic = []
 
@@ -95,7 +92,7 @@ def issue_assignee_query(self, repos):
 
     # 'ack' is a boolean of whether data was set correctly or not.
     ack = cm_o.setm(
-        func=issue_assignee_query,
+        func=repo_files_query,
         repos=repos,
         datas=pic,
     )

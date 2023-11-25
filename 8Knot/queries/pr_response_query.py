@@ -7,7 +7,7 @@ import io
 import datetime as dt
 from sqlalchemy.exc import SQLAlchemyError
 
-QUERY_NAME = "ISSUE_ASSIGNEE"
+QUERY_NAME = "PR_RESPONSE"
 
 
 @celery_app.task(
@@ -17,18 +17,19 @@ QUERY_NAME = "ISSUE_ASSIGNEE"
     retry_kwargs={"max_retries": 5},
     retry_jitter=True,
 )
-def issue_assignee_query(self, repos):
+def pr_response_query(self, repos):
     """
     (Worker Query)
     Executes SQL query against Augur database for contributor data.
 
-    Explorer_issue_assignments is a materialized view on the database for quicker run time and
-    may not be in your augur database. The SQL query content can be found
-    in docs/materialized_views/explorer_issue_assignments.sql
+    This query gets the messages that are in response to a pr if any exists,
+    if not the msg_timestamp is null. It takes in the data
+    of the comments (messages) on prs and pr reviews for each pr if it exists.
 
     Args:
     -----
         repo_ids ([str]): repos that SQL query is executed on.
+
     Returns:
     --------
         dict: Results from SQL query, interpreted from pd.to_dict('records')
@@ -42,9 +43,9 @@ def issue_assignee_query(self, repos):
                     SELECT
                         *
                     FROM
-                        explorer_issue_assignments ia
+                        explorer_pr_response epr
                     WHERE
-                        ia.id in ({str(repos)[1:-1]})
+                        epr.ID in ({str(repos)[1:-1]})
                 """
 
     try:
@@ -61,13 +62,16 @@ def issue_assignee_query(self, repos):
 
     df = dbm.run_query(query_string)
 
-    # id as string and slice to remove excess 0s
-    df["assignee"] = df["assignee"].astype(str)
-    df["assignee"] = df["assignee"].str[:15]
+    # reformat cntrb_id
+    df["cntrb_id"] = df["cntrb_id"].astype(str)
+    df["cntrb_id"] = df["cntrb_id"].str[:15]
+
+    df["msg_cntrb_id"] = df["msg_cntrb_id"].astype(str)
+    df["msg_cntrb_id"] = df["msg_cntrb_id"].str[:15]
 
     # change to compatible type and remove all data that has been incorrectly formated
-    df["created"] = pd.to_datetime(df["created"], utc=True).dt.date
-    df = df[df.created < dt.date.today()]
+    df["pr_created_at"] = pd.to_datetime(df["pr_created_at"], utc=True).dt.date
+    df = df[df.pr_created_at < dt.date.today()]
 
     pic = []
 
@@ -95,7 +99,7 @@ def issue_assignee_query(self, repos):
 
     # 'ack' is a boolean of whether data was set correctly or not.
     ack = cm_o.setm(
-        func=issue_assignee_query,
+        func=pr_response_query,
         repos=repos,
         datas=pic,
     )
