@@ -1,31 +1,29 @@
-from dash import html, dcc, callback
+from dash import html, dcc
 import dash
-from dash import dcc
 import dash_bootstrap_components as dbc
-import dash_mantine_components as dmc
+from dash import callback
 from dash.dependencies import Input, Output, State
 import plotly.graph_objects as go
 import pandas as pd
-import logging
-from dateutil.relativedelta import *  # type: ignore
-import plotly.express as px
-from pages.utils.graph_utils import get_graph_time_values, color_seq
-from queries.contributors_query import contributors_query as ctq
-import io
-from cache_manager.cache_manager import CacheManager as cm
-from pages.utils.job_utils import nodata_graph
-import time
 import datetime as dt
+import logging
+from pages.utils.graph_utils import get_graph_time_values, color_seq
+import io
+from pages.utils.job_utils import nodata_graph
+from cache_manager.cache_manager import CacheManager as cm
+import time
+
+from queries.change_request_closure_ratio_query import change_request_closure_ratio_query as crcrq
 
 PAGE = "project_starter_health"
-VIZ_ID = "change-request-closure-ratio"
+VIZ_ID = "change_request_closure_ratio"
 
 gc_change_request_closure_ratio = dbc.Card(
     [
         dbc.CardBody(
             [
                 html.H3(
-                    id=f"graph-title-{PAGE}-{VIZ_ID}",
+                    "Change Request Closure Ratio",
                     className="card-title",
                     style={"textAlign": "center"},
                 ),
@@ -34,20 +32,13 @@ gc_change_request_closure_ratio = dbc.Card(
                         dbc.PopoverHeader("Graph Info:"),
                         dbc.PopoverBody(
                             """
-                                        For a given action type, visualizes the proportional share of the top k anonymous
-                                        contributors, aggregating the remaining contributors as "Other". Suppose Contributor A
-                                        opens the most PRs of all contributors, accounting for 1/5 of all PRs. If k = 1,
-                                        then the chart will have one slice for Contributor A accounting for 1/5 of the area,
-                                        with the remaining 4/5 representing all other contributors. By default, contributors
-                                        who have 'potential-bot-filter' in their login are filtered out. Optionally, contributors
-                                        can be filtered out by their logins with custom keyword(s). Note: Some commits may have a
-                                        Contributor ID of 'None' if there is no Github account is associated with the email that
-                                        the contributor committed as.
-                                        """
+
+                            Visualizes the change (pull) request closure ratio. Shows the amount of created, merged, and closed (but not merged) requests over time.\n The total count of change requests not merged or closed (i.e. still open) is shown as a trend over time as well.
+                            """
                         ),
                     ],
                     id=f"popover-{PAGE}-{VIZ_ID}",
-                    target=f"popover-target-{PAGE}-{VIZ_ID}",  # needs to be the same as dbc.Button id
+                    target=f"popover-target-{PAGE}-{VIZ_ID}",
                     placement="top",
                     is_open=False,
                 ),
@@ -59,122 +50,50 @@ gc_change_request_closure_ratio = dbc.Card(
                         dbc.Row(
                             [
                                 dbc.Label(
-                                    "Action Type:",
-                                    html_for=f"action-type-{PAGE}-{VIZ_ID}",
+                                    "Date Interval:",
+                                    html_for=f"date-interval-{PAGE}-{VIZ_ID}",
                                     width="auto",
                                 ),
                                 dbc.Col(
-                                    [
-                                        dcc.Dropdown(
-                                            id=f"action-type-{PAGE}-{VIZ_ID}",
-                                            options=[
-                                                {"label": "Commit", "value": "Commit"},
-                                                {"label": "Issue Opened", "value": "Issue Opened"},
-                                                {"label": "Issue Comment", "value": "Issue Comment"},
-                                                {"label": "Issue Closed", "value": "Issue Closed"},
-                                                {"label": "PR Open", "value": "PR Open"},
-                                                {"label": "PR Review", "value": "PR Review"},
-                                                {"label": "PR Comment", "value": "PR Comment"},
-                                            ],
-                                            value="Commit",
-                                            clearable=False,
-                                        ),
-                                        dbc.Alert(
-                                            children="""No contributions of this type have been made.\n
-                                            Please select a different contribution type.""",
-                                            id=f"check-alert-{PAGE}-{VIZ_ID}",
-                                            dismissable=True,
-                                            fade=False,
-                                            is_open=False,
-                                            color="warning",
-                                        ),
-                                    ],
-                                    className="me-2",
-                                    width=3,
-                                ),
-                                dbc.Label(
-                                    "Top K Contributors:",
-                                    html_for=f"top-k-contributors-{PAGE}-{VIZ_ID}",
-                                    width="auto",
-                                ),
-                                dbc.Col(
-                                    [
-                                        dbc.Input(
-                                            id=f"top-k-contributors-{PAGE}-{VIZ_ID}",
-                                            type="number",
-                                            min=2,
-                                            max=100,
-                                            step=1,
-                                            value=10,
-                                            size="sm",
-                                        ),
-                                    ],
-                                    className="me-2",
-                                    width=2,
-                                ),
-                            ],
-                            align="center",
-                        ),
-                        dbc.Row(
-                            [
-                                dbc.Label(
-                                    "Filter Out Contributors with Keyword(s) in Login:",
-                                    html_for=f"patterns-{PAGE}-{VIZ_ID}",
-                                    width="auto",
-                                ),
-                                dbc.Col(
-                                    [
-                                        dmc.MultiSelect(
-                                            id=f"patterns-{PAGE}-{VIZ_ID}",
-                                            placeholder="Bot filter values",
-                                            data=[
-                                                {"value": "bot", "label": "bot"},
-                                            ],
-                                            classNames={"values": "dmc-multiselect-custom"},
-                                            creatable=True,
-                                            searchable=True,
-                                        ),
-                                    ],
+                                    dbc.RadioItems(
+                                        id=f"date-interval-{PAGE}-{VIZ_ID}",
+                                        options=[
+                                            {
+                                                "label": "Day",
+                                                "value": "D",
+                                            },
+                                            {
+                                                "label": "Week",
+                                                "value": "W",
+                                            },
+                                            {"label": "Month", "value": "M"},
+                                            {"label": "Year", "value": "Y"},
+                                        ],
+                                        value="M",
+                                        inline=True,
+                                    ),
                                     className="me-2",
                                 ),
-                            ],
-                            align="center",
-                        ),
-                        dbc.Row(
-                            [
                                 dbc.Col(
-                                    [
-                                        dcc.DatePickerRange(
-                                            id=f"date-picker-range-{PAGE}-{VIZ_ID}",
-                                            min_date_allowed=dt.date(2005, 1, 1),
-                                            max_date_allowed=dt.date.today(),
-                                            initial_visible_month=dt.date(dt.date.today().year, 1, 1),
-                                            clearable=True,
-                                        ),
-                                    ],
-                                ),
-                                dbc.Col(
-                                    [
-                                        dbc.Button(
-                                            "About Graph",
-                                            id=f"popover-target-{PAGE}-{VIZ_ID}",
-                                            color="secondary",
-                                            size="sm",
-                                        ),
-                                    ],
+                                    dbc.Button(
+                                        "About Graph",
+                                        id=f"popover-target-{PAGE}-{VIZ_ID}",
+                                        color="secondary",
+                                        size="sm",
+                                    ),
                                     width="auto",
                                     style={"paddingTop": ".5em"},
                                 ),
                             ],
                             align="center",
-                            justify="between",
                         ),
                     ]
                 ),
             ]
-        )
+        ),
     ],
 )
+
 
 # callback for graph info popover
 @callback(
@@ -188,128 +107,195 @@ def toggle_popover(n, is_open):
     return is_open
 
 
-# callback for dynamically changing the graph title
-@callback(
-    Output(f"graph-title-{PAGE}-{VIZ_ID}", "children"),
-    Input(f"top-k-contributors-{PAGE}-{VIZ_ID}", "value"),
-    Input(f"action-type-{PAGE}-{VIZ_ID}", "value"),
-)
-def graph_title(k, action_type):
-    title = f"Change Request Closure Ratio"
-    return title
-
-
-# callback for contrib-importance graph
+# callback for commits over time graph
 @callback(
     Output(f"{PAGE}-{VIZ_ID}", "figure"),
-    Output(f"check-alert-{PAGE}-{VIZ_ID}", "is_open"),
     [
         Input("repo-choices", "data"),
-        Input(f"action-type-{PAGE}-{VIZ_ID}", "value"),
-        Input(f"top-k-contributors-{PAGE}-{VIZ_ID}", "value"),
-        Input(f"patterns-{PAGE}-{VIZ_ID}", "value"),
-        Input(f"date-picker-range-{PAGE}-{VIZ_ID}", "start_date"),
-        Input(f"date-picker-range-{PAGE}-{VIZ_ID}", "end_date"),
+        Input(f"date-interval-{PAGE}-{VIZ_ID}", "value"),
     ],
     background=True,
 )
-def create_top_k_cntrbs_graph(repolist, action_type, top_k, patterns, start_date, end_date):
+
+
+def change_request_ratio_graph(repolist, interval):
     # wait for data to asynchronously download and become available.
     cache = cm()
-    df = cache.grabm(func=ctq, repos=repolist)
+    df = cache.grabm(func=crcrq, repos=repolist)
     while df is None:
         time.sleep(1.0)
-        df = cache.grabm(func=ctq, repos=repolist)
+        df = cache.grabm(func=crcrq, repos=repolist)
 
+    #print(df)
+
+    # data ready.
     start = time.perf_counter()
-    logging.warning(f"{VIZ_ID}- START")
+    logging.warning("CHANGE_REQUEST_CLOSURE_RATIO_VIZ - START")
 
     # test if there is data
     if df.empty:
-        logging.warning(f"{VIZ_ID} - NO DATA AVAILABLE")
-        return nodata_graph, False
-
-    # checks if there is a contribution of a specfic action type in repo set
-    if not df["Action"].str.contains(action_type).any():
-        return dash.no_update, True
+        logging.warning("CHANGE REQUEST CLOSURE RATIO - NO DATA AVAILABLE")
+        return nodata_graph
 
     # function for all data pre processing
-    df = process_data(df, action_type, top_k, patterns, start_date, end_date)
+    df_created, df_closed_merged, df_open = process_data(df, interval)
 
-    fig = create_figure(df, action_type)
+    fig = create_figure(df_created, df_closed_merged, df_open, interval)
 
-    logging.warning(f"{VIZ_ID} - END - {time.perf_counter() - start}")
-    return fig, False
-
-
-def process_data(df: pd.DataFrame, action_type, top_k, patterns, start_date, end_date):
-    # convert to datetime objects rather than strings
-    df["created_at"] = pd.to_datetime(df["created_at"], utc=True)
-
-    # order values chronologically by created_at date
-    df = df.sort_values(by="created_at", ascending=True)
-
-    # filter values based on date picker
-    if start_date is not None:
-        df = df[df.created_at >= start_date]
-    if end_date is not None:
-        df = df[df.created_at <= end_date]
-
-    # subset the df such that it only contains rows where the Action column value is the action type
-    df = df[df["Action"].str.contains(action_type)]
-
-    # option to filter out potential bots
-    if patterns:
-        # remove rows where login column value contains any keyword in patterns
-        patterns_mask = df["login"].str.contains("|".join(patterns), na=False)
-        df = df[~patterns_mask]
-
-    # count the number of contributions for each contributor
-    df = (df.groupby("cntrb_id")["Action"].count()).to_frame()
-
-    # sort rows according to amount of contributions from greatest to least
-    df.sort_values(by="cntrb_id", ascending=False, inplace=True)
-    df = df.reset_index()
-
-    # rename Action column to action_type
-    df = df.rename(columns={"Action": action_type})
-
-    # get the number of total contributions
-    t_sum = df[action_type].sum()
-
-    # index df to get first k rows
-    df = df.head(top_k)
-
-    # convert cntrb_id from type UUID to String
-    df["cntrb_id"] = df["cntrb_id"].apply(lambda x: str(x).split("-")[0])
-
-    # get the number of total top k contributions
-    df_sum = df[action_type].sum()
-
-    # calculate the remaining contributions by taking the the difference of t_sum and df_sum
-    df = df.append({"cntrb_id": "Other", action_type: t_sum - df_sum}, ignore_index=True)
-
-    return df
-
-
-def create_figure(df: pd.DataFrame, action_type):
-    # create plotly express pie chart
-    fig = px.pie(
-        df,
-        names="cntrb_id",  # can be replaced with login to unanonymize
-        values=action_type,
-        color_discrete_sequence=color_seq,
-    )
-
-    # display percent contributions and cntrb_id in each wedge
-    # format hover template to display cntrb_id and the number of their contributions according to the action_type
-    fig.update_traces(
-        textinfo="percent+label",
-        textposition="inside",
-        hovertemplate="Contributor ID: %{label} <br>Contributions: %{value}<br><extra></extra>",
-    )
-
-    # add legend title
-    fig.update_layout(legend_title_text="Contributor ID")
+    logging.warning(f"CHANGE_REQUEST_CLOSURE_RATIO_VIZ - END - {time.perf_counter() - start}")
 
     return fig
+
+
+def process_data(df: pd.DataFrame, interval):
+    # convert dates to datetime objects rather than strings
+    df["created"] = pd.to_datetime(df["created"], utc=True)
+    df["merged"] = pd.to_datetime(df["merged"], utc=True)
+    df["closed"] = pd.to_datetime(df["closed"], utc=True)
+
+    # order values chronologically by creation date
+    df = df.sort_values(by="created", axis=0, ascending=True)
+
+    # variable to slice on to handle weekly period edge case
+    period_slice = None
+    if interval == "W":
+        # this is to slice the extra period information that comes with the weekly case
+        period_slice = 10
+
+    # --data frames for PR created, merged, or closed. Detailed description applies for all 3.--
+
+    # get the count of created prs in the desired interval in pandas period format, sort index to order entries
+    created_range = df["created"].dt.to_period(interval).value_counts().sort_index()
+
+    # converts to data frame object and created date column from period values
+    df_created = created_range.to_frame().reset_index().rename(columns={"index": "Date"})
+
+    # converts date column to a datetime object, converts to string first to handle period information
+    # the period slice is to handle weekly corner case
+    df_created["Date"] = pd.to_datetime(df_created["Date"].astype(str).str[:period_slice])
+
+    # df for merged prs in time interval
+    merged_range = pd.to_datetime(df["merged"]).dt.to_period(interval).value_counts().sort_index()
+    df_merged = merged_range.to_frame().reset_index().rename(columns={"index": "Date"})
+    df_merged["Date"] = pd.to_datetime(df_merged["Date"].astype(str).str[:period_slice])
+
+    # df for closed prs in time interval
+    closed_range = pd.to_datetime(df["closed"]).dt.to_period(interval).value_counts().sort_index()
+    df_closed = closed_range.to_frame().reset_index().rename(columns={"index": "Date"})
+    df_closed["Date"] = pd.to_datetime(df_closed["Date"].astype(str).str[:period_slice])
+
+    # A single df created for plotting merged and closed as stacked bar chart
+    df_closed_merged = pd.merge(df_merged, df_closed, on="Date", how="outer")
+
+    # formatting for graph generation
+    if interval == "M":
+        df_created["Date"] = df_created["Date"].dt.strftime("%Y-%m-01")
+        df_closed_merged["Date"] = df_closed_merged["Date"].dt.strftime("%Y-%m-01")
+    elif interval == "Y":
+        df_created["Date"] = df_created["Date"].dt.strftime("%Y-01-01")
+        df_closed_merged["Date"] = df_closed_merged["Date"].dt.strftime("%Y-01-01")
+
+    df_closed_merged["closed"] = df_closed_merged["closed"] - df_closed_merged["merged"]
+
+    # ----- Open PR processinging starts here ----
+
+    # first and last elements of the dataframe are the
+    # earliest and latest events respectively
+    earliest = df["created"].min()
+    latest = max(df["created"].max(), df["closed"].max())
+
+    # beginning to the end of time by the specified interval
+    dates = pd.date_range(start=earliest, end=latest, freq="D", inclusive="both")
+
+    # df for open prs from time interval
+    df_open = dates.to_frame(index=False, name="Date")
+
+    # aplies function to get the amount of open prs for each day
+    df_open["Open"] = df_open.apply(lambda row: get_open(df, row.Date), axis=1)
+
+    df_open["Date"] = df_open["Date"].dt.strftime("%Y-%m-%d")
+
+    return df_created, df_closed_merged, df_open
+
+
+def create_figure(
+    df_created: pd.DataFrame,
+    df_closed_merged: pd.DataFrame,
+    df_open: pd.DataFrame,
+    interval,
+):
+    # time values for graph
+    x_r, x_name, hover, period = get_graph_time_values(interval)
+
+    # graph generation
+    fig = go.Figure()
+    fig.add_bar(
+        x=df_created["Date"],
+        y=df_created["created"],
+        opacity=0.9,
+        hovertemplate=hover + "<br>Created: %{y}<br>" + "<extra></extra>",
+        offsetgroup=0,
+        marker=dict(color=color_seq[2]),
+        name="Created",
+    )
+    fig.add_bar(
+        x=df_closed_merged["Date"],
+        y=df_closed_merged["merged"],
+        opacity=0.9,
+        hovertemplate=hover + "<br>Merged: %{y}<br>" + "<extra></extra>",
+        offsetgroup=1,
+        marker=dict(color=color_seq[4]),
+        name="Merged",
+    )
+    fig.add_bar(
+        x=df_closed_merged["Date"],
+        y=df_closed_merged["closed"],
+        opacity=0.9,
+        hovertemplate=[f"{hover}<br>Closed: {val}<br><extra></extra>" for val in df_closed_merged["closed"]],
+        offsetgroup=1,
+        base=df_closed_merged["merged"],
+        marker=dict(color=color_seq[3]),
+        name="Closed",
+    )
+    fig.update_xaxes(
+        showgrid=True,
+        ticklabelmode="period",
+        dtick=period,
+        rangeslider_yaxis_rangemode="match",
+        range=x_r,
+    )
+    fig.update_layout(
+        xaxis_title=x_name,
+        yaxis_title="Change Request Closure Ratio",
+        bargroupgap=0.1,
+        margin_b=40,
+        font=dict(size=14),
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=df_open["Date"],
+            y=df_open["Open"],
+            mode="lines",
+            marker=dict(color=color_seq[5]),
+            name="Open",
+            hovertemplate="Change (Pull) Requests Open: %{y}<br>%{x|%b %d, %Y} <extra></extra>",
+        )
+    )
+
+    return fig
+
+
+# for each day, this function calculates the amount of open prs
+def get_open(df, date):
+    # drop rows that are more recent than the date limit
+    df_created = df[df["created"] <= date]
+
+    # drops rows that have been closed after date
+    df_open = df_created[df_created["closed"] > date]
+
+    # include prs that have not been close yet
+    df_open = pd.concat([df_open, df_created[df_created.closed.isnull()]])
+
+    # generates number of columns ie open prs
+    num_open = df_open.shape[0]
+    return num_open
