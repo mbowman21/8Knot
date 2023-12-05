@@ -90,11 +90,11 @@ navbar = dbc.Navbar(
                             dbc.Nav(
                                 [
                                     dbc.NavLink("Welcome", href="/", active="exact"),
-                                    dbc.NavLink(
-                                        "Contributions",
-                                        href="/contributions",
-                                        active="exact",
-                                    ),
+                                    # dbc.NavLink(
+                                    #     "Contributions",
+                                    #     href="/contributions",
+                                    #     active="exact",
+                                    # ),
                                     dbc.DropdownMenu(
                                         [
                                             dbc.DropdownMenuItem(
@@ -109,16 +109,16 @@ navbar = dbc.Navbar(
                                         label="Contributors",
                                         nav=True,
                                     ),
-                                    dbc.NavLink(
-                                        "Affiliation",
-                                        href="/affiliation",
-                                        active="exact",
-                                    ),
-                                    dbc.NavLink("CHAOSS", href="/chaoss", active="exact"),
-                                    # added:
-                                    dbc.NavLink("Project Starter Health", href="/project_starter_health", active="exact"),
+                                    # dbc.NavLink(
+                                    #     "Affiliation",
+                                    #     href="/affiliation",
+                                    #     active="exact",
+                                    # ),
+                                    # dbc.NavLink("CHAOSS", href="/chaoss", active="exact"),
+                                    # # added:
+                                    # dbc.NavLink("Project Starter Health", href="/project_starter_health", active="exact"),
                                     dbc.NavLink("Project Engagement", href="/project_engagement", active="exact"),
-                                    dbc.NavLink("Info", href="/info", active="exact"),
+                                    # dbc.NavLink("Info", href="/info", active="exact"),
                                 ],
                                 navbar=True,
                             )
