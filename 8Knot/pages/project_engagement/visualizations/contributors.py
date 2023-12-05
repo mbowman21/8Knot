@@ -22,7 +22,7 @@ gc_contributors = dbc.Card(
         dbc.CardBody(
             [
                 html.H3(
-                    "Releases Over Time",
+                    "Contributors",
                     className="card-title",
                     style={"textAlign": "center"},
                 ),
@@ -31,7 +31,7 @@ gc_contributors = dbc.Card(
                         dbc.PopoverHeader("Graph Info:"),
                         dbc.PopoverBody(
                             """
-                            Visualizes the number of times a new release came out.
+                            Total number of contributors over a period of time.
                             """
                         ),
                     ],
@@ -114,7 +114,7 @@ def toggle_popover(n, is_open):
     ],
     background=True,
 )
-def releases_over_time_graph(repolist, interval):
+def contributors_over_time_graph(repolist, interval):
     # wait for data to asynchronously download and become available.
     cache = cm()
     df = cache.grabm(func=rfq, repos=repolist)
@@ -126,11 +126,11 @@ def releases_over_time_graph(repolist, interval):
 
     # data ready.
     start = time.perf_counter()
-    logging.warning("RELEASES_OVER_TIME_VIZ - START")
+    logging.warning("CONTRIBUTORS_OVER_TIME_VIZ - START")
 
     # test if there is data
     if df.empty:
-        logging.warning("RELEASES OVER TIME - NO DATA AVAILABLE")
+        logging.warning("CONTRIBUTORS OVER TIME - NO DATA AVAILABLE")
         return nodata_graph
 
     # function for all data pre processing
@@ -138,7 +138,7 @@ def releases_over_time_graph(repolist, interval):
 
     fig = create_figure(df_created, interval)
 
-    logging.warning(f"RELEASES_OVER_TIME_VIZ - END - {time.perf_counter() - start}")
+    logging.warning(f"CONTRIBUTORS_OVER_TIME_VIZ - END - {time.perf_counter() - start}")
     return fig
 
 
@@ -156,7 +156,7 @@ def process_data(df: pd.DataFrame, interval):
 
     # get the count of commits in the desired interval in pandas period format, sort index to order entries
     df_created = (
-        df.groupby(by=df.created.dt.to_period(interval))["releases"]
+        df.groupby(by=df.created.dt.to_period(interval))["contributors"]
         .nunique()
         .reset_index()
         .rename(columns={"created": "Date"})
@@ -177,12 +177,12 @@ def create_figure(df_created: pd.DataFrame, interval):
     fig = px.line(
         df_created,
         x="Date",
-        y="releases",
+        y="Contributors",
         range_x=x_r,
-        labels={"x": x_name, "y": "Releases"},
+        labels={"x": x_name, "y": "Contributors"},
         color_discrete_sequence=[color_seq[3]],
     )
-    fig.update_traces(hovertemplate=hover + "<br>Releases: %{y}<br>")
+    fig.update_traces(hovertemplate=hover + "<br>Contributors: %{y}<br>")
     fig.update_xaxes(
         showgrid=True,
         ticklabelmode="period",
@@ -192,7 +192,7 @@ def create_figure(df_created: pd.DataFrame, interval):
     )
     fig.update_layout(
         xaxis_title=x_name,
-        yaxis_title="Number of Releases",
+        yaxis_title="Number of Contributors",
         margin_b=40,
         margin_r=20,
         font=dict(size=14),

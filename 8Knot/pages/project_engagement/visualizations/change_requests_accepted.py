@@ -14,16 +14,15 @@ import time
 
 from queries.release_frequency_query import release_frequency_query as rfq
 
-
 PAGE = "project_engagement"
-VIZ_ID = "issues_updated"
+VIZ_ID = "change_requests_accepted"
 
-gc_issues_updated = dbc.Card(
+gc_change_requests_accepted = dbc.Card(
     [
         dbc.CardBody(
             [
                 html.H3(
-                    "Issues Updated",
+                    "Releases Over Time",
                     className="card-title",
                     style={"textAlign": "center"},
                 ),
@@ -32,7 +31,7 @@ gc_issues_updated = dbc.Card(
                         dbc.PopoverHeader("Graph Info:"),
                         dbc.PopoverBody(
                             """
-                            Issues updated during a certain period of time.
+                            Visualizes the number of times a new release came out.
                             """
                         ),
                     ],
@@ -115,7 +114,7 @@ def toggle_popover(n, is_open):
     ],
     background=True,
 )
-def issues_updated_over_time_graph(repolist, interval):
+def releases_over_time_graph(repolist, interval):
     # wait for data to asynchronously download and become available.
     cache = cm()
     df = cache.grabm(func=rfq, repos=repolist)
@@ -127,11 +126,11 @@ def issues_updated_over_time_graph(repolist, interval):
 
     # data ready.
     start = time.perf_counter()
-    logging.warning("ISSUES_UPDATED_OVER_TIME_VIZ - START")
+    logging.warning("RELEASES_OVER_TIME_VIZ - START")
 
     # test if there is data
     if df.empty:
-        logging.warning("ISSUES_UPDATED OVER TIME - NO DATA AVAILABLE")
+        logging.warning("RELEASES OVER TIME - NO DATA AVAILABLE")
         return nodata_graph
 
     # function for all data pre processing
@@ -139,7 +138,7 @@ def issues_updated_over_time_graph(repolist, interval):
 
     fig = create_figure(df_created, interval)
 
-    logging.warning(f"ISSUES_UPDATED_OVER_TIME_VIZ - END - {time.perf_counter() - start}")
+    logging.warning(f"RELEASES_OVER_TIME_VIZ - END - {time.perf_counter() - start}")
     return fig
 
 
@@ -157,7 +156,7 @@ def process_data(df: pd.DataFrame, interval):
 
     # get the count of commits in the desired interval in pandas period format, sort index to order entries
     df_created = (
-        df.groupby(by=df.created.dt.to_period(interval))["issues_updated"]
+        df.groupby(by=df.created.dt.to_period(interval))["releases"]
         .nunique()
         .reset_index()
         .rename(columns={"created": "Date"})
@@ -178,12 +177,12 @@ def create_figure(df_created: pd.DataFrame, interval):
     fig = px.line(
         df_created,
         x="Date",
-        y="issues updated",
+        y="releases",
         range_x=x_r,
-        labels={"x": x_name, "y": "Issues Updated"},
+        labels={"x": x_name, "y": "Releases"},
         color_discrete_sequence=[color_seq[3]],
     )
-    fig.update_traces(hovertemplate=hover + "<br>Issues Updated: %{y}<br>")
+    fig.update_traces(hovertemplate=hover + "<br>Releases: %{y}<br>")
     fig.update_xaxes(
         showgrid=True,
         ticklabelmode="period",
@@ -193,7 +192,7 @@ def create_figure(df_created: pd.DataFrame, interval):
     )
     fig.update_layout(
         xaxis_title=x_name,
-        yaxis_title="Number of Issues Updated",
+        yaxis_title="Number of Releases",
         margin_b=40,
         margin_r=20,
         font=dict(size=14),
