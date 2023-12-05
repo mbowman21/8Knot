@@ -7,20 +7,32 @@ import io
 import datetime as dt
 from sqlalchemy.exc import SQLAlchemyError
 
-QUERY_NAME = "PR"
+"""
+TODO:
+(1) update QUERY_NAME
+(2) update 'NAME_query' found in function definition and in the function call that sets the 'ack' variable below.
+'NAME' should be the same as QUERY_NAME
+(3) paste SQL query in the query_string
+(4) insert any necessary df column name or format changed under the pandas column and format updates comment
+(5) reset df index if #4 is performed via "df = df.reset_index(drop=True)"
+(6) go to index/index_callbacks.py and import the NAME_query as a unqiue acronym and add it to the QUERIES list
+(7) delete this list when completed
+"""
+
+QUERY_NAME = "CHANGE_REQUEST_CLOSURE_RATIO"
 
 
-@celery_app.task(
+@celery_app.task(   
     bind=True,
     autoretry_for=(Exception,),
     exponential_backoff=2,
     retry_kwargs={"max_retries": 5},
     retry_jitter=True,
 )
-def prs_query(self, repos):
+def change_request_closure_ratio_query(self, repos):
     """
     (Worker Query)
-    Executes SQL query against Augur database for pull request data.
+    Executes SQL query against Augur database for contributor data.
 
     Args:
     -----
@@ -108,7 +120,7 @@ def prs_query(self, repos):
 
     # 'ack' is a boolean of whether data was set correctly or not.
     ack = cm_o.setm(
-        func=prs_query,
+        func=change_request_closure_ratio_query,
         repos=repos,
         datas=pic,
     )
