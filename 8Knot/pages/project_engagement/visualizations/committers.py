@@ -1,18 +1,20 @@
-from dash import html, dcc
+from dash import html, dcc, callback
 import dash
 import dash_bootstrap_components as dbc
-from dash import callback
 from dash.dependencies import Input, Output, State
+import plotly.graph_objects as go
 import pandas as pd
 import logging
+from dateutil.relativedelta import *  # type: ignore
 import plotly.express as px
 from pages.utils.graph_utils import get_graph_time_values, color_seq
+from queries.contributors_query import contributors_query as ctq
+import io
 from cache_manager.cache_manager import CacheManager as cm
 from pages.utils.job_utils import nodata_graph
-import io
 import time
+import app
 
-from queries.release_frequency_query import release_frequency_query as rfq
 
 PAGE = "project_engagement"
 VIZ_ID = "committers"
@@ -22,7 +24,7 @@ gc_committers = dbc.Card(
         dbc.CardBody(
             [
                 html.H3(
-                    "Releases Over Time",
+                    "Committers",
                     className="card-title",
                     style={"textAlign": "center"},
                 ),
@@ -30,13 +32,13 @@ gc_committers = dbc.Card(
                     [
                         dbc.PopoverHeader("Graph Info:"),
                         dbc.PopoverBody(
-                            """
-                            Visualizes the number of times a new release came out.
-                            """
+                            """Visualizes the number of individuals who have committed code to a project. \n
+                             This is different from contributors because these individuals have commits \n
+                              merged into the project. """
                         ),
                     ],
                     id=f"popover-{PAGE}-{VIZ_ID}",
-                    target=f"popover-target-{PAGE}-{VIZ_ID}",  # needs to be the same as dbc.Button id
+                    target=f"popover-target-{PAGE}-{VIZ_ID}",
                     placement="top",
                     is_open=False,
                 ),
@@ -48,6 +50,41 @@ gc_committers = dbc.Card(
                         dbc.Row(
                             [
                                 dbc.Label(
+                                    "",
+                                    html_for=f"action-dropdown-{PAGE}-{VIZ_ID}",
+                                    width="auto",
+                                ),
+                                dbc.Col(
+                                    [
+                                        html.Div([
+                                            dcc.Dropdown(
+                                                id=f"action-dropdown-{PAGE}-{VIZ_ID}",
+                                                value="Commit",
+                                                clearable=False,
+                                            )
+                                            ], style= {'display': 'none'}
+                                        ),
+                                        
+
+                                        dbc.Alert(
+                                            children="""No contributions of this type have been made.\n
+                                            Please select a different contribution type.""",
+                                            id=f"check-alert-{PAGE}-{VIZ_ID}",
+                                            dismissable=True,
+                                            fade=False,
+                                            is_open=False,
+                                            color="warning",
+                                        ),
+                                    ],
+                                    className="me-2",
+                                    width=3,
+                                ),
+                            ],
+                            align="center",
+                        ),
+                        dbc.Row(
+                            [
+                                dbc.Label(
                                     "Date Interval:",
                                     html_for=f"date-interval-{PAGE}-{VIZ_ID}",
                                     width="auto",
@@ -56,18 +93,12 @@ gc_committers = dbc.Card(
                                     dbc.RadioItems(
                                         id=f"date-interval-{PAGE}-{VIZ_ID}",
                                         options=[
-                                            {
-                                                "label": "Day",
-                                                "value": "D",
-                                            },
-                                            {
-                                                "label": "Week",
-                                                "value": "W",
-                                            },
-                                            {"label": "Month", "value": "M"},
-                                            {"label": "Year", "value": "Y"},
+                                            {"label": "Month", "value": "M1"},
+                                            {"label": "Quarter", "value": "M3"},
+                                            {"label": "6 Months", "value": "M6"},
+                                            {"label": "Year", "value": "M12"},
                                         ],
-                                        value="M",
+                                        value="M1",
                                         inline=True,
                                     ),
                                     className="me-2",
@@ -88,7 +119,7 @@ gc_committers = dbc.Card(
                     ]
                 ),
             ]
-        ),
+        )
     ],
 )
 
@@ -105,84 +136,82 @@ def toggle_popover(n, is_open):
     return is_open
 
 
-# callback for commits over time graph
+# callback for contributors by action graph
 @callback(
     Output(f"{PAGE}-{VIZ_ID}", "figure"),
+    Output(f"check-alert-{PAGE}-{VIZ_ID}", "is_open"),
     [
         Input("repo-choices", "data"),
         Input(f"date-interval-{PAGE}-{VIZ_ID}", "value"),
+        Input(f"action-dropdown-{PAGE}-{VIZ_ID}", "value"),
+        Input("bot-switch", "value"),
     ],
     background=True,
 )
-def releases_over_time_graph(repolist, interval):
+def committers_graph(repolist, interval, action, bot_switch):
+
     # wait for data to asynchronously download and become available.
     cache = cm()
-    df = cache.grabm(func=rfq, repos=repolist)
+    df = cache.grabm(func=ctq, repos=repolist)
     while df is None:
         time.sleep(1.0)
-        df = cache.grabm(func=rfq, repos=repolist)
+        df = cache.grabm(func=ctq, repos=repolist)
 
-    print(df)
-
-    # data ready.
     start = time.perf_counter()
-    logging.warning("RELEASES_OVER_TIME_VIZ - START")
+    logging.warning(f"{VIZ_ID}- START")
 
     # test if there is data
     if df.empty:
-        logging.warning("RELEASES OVER TIME - NO DATA AVAILABLE")
-        return nodata_graph
+        logging.warning(f"{VIZ_ID} - NO DATA AVAILABLE")
+        return nodata_graph, False
+
+    # remove bot data
+    if bot_switch:
+        df = df[~df["cntrb_id"].isin(app.bots_list)]
+
+    # checks if there is a contribution of a specfic action in repo set
+    if not df["Action"].str.contains(action).any():
+        return dash.no_update, True
 
     # function for all data pre processing
-    df_created = process_data(df, interval)
+    df = process_data(df, interval, action)
 
-    fig = create_figure(df_created, interval)
+    fig = create_figure(df, interval, action)
 
-    logging.warning(f"RELEASES_OVER_TIME_VIZ - END - {time.perf_counter() - start}")
-    return fig
-
-
-def process_data(df: pd.DataFrame, interval):
-    # convert to datetime objects with consistent column name
-    # incoming value should be a posix integer.
-    df["date"] = pd.to_datetime(df["date"], utc=True)
-    df.rename(columns={"date": "created"}, inplace=True)
-
-    # variable to slice on to handle weekly period edge case
-    period_slice = None
-    if interval == "W":
-        # this is to slice the extra period information that comes with the weekly case
-        period_slice = 10
-
-    # get the count of commits in the desired interval in pandas period format, sort index to order entries
-    df_created = (
-        df.groupby(by=df.created.dt.to_period(interval))["releases"]
-        .nunique()
-        .reset_index()
-        .rename(columns={"created": "Date"})
-    )
-
-    # converts date column to a datetime object, converts to string first to handle period information
-    # the period slice is to handle weekly corner case
-    df_created["Date"] = pd.to_datetime(df_created["Date"].astype(str).str[:period_slice])
-
-    return df_created
+    logging.warning(f"{VIZ_ID} - END - {time.perf_counter() - start}")
+    return fig, False
 
 
-def create_figure(df_created: pd.DataFrame, interval):
+def process_data(df: pd.DataFrame, interval, action):
+
+    # convert to datetime objects rather than strings
+    df["created_at"] = pd.to_datetime(df["created_at"], utc=True)
+
+    # order values chronologically by COLUMN_TO_SORT_BY date
+    df = df.sort_values(by="created_at", axis=0, ascending=True)
+
+    # drop all contributions that are not the selected action
+    df = df[df["Action"].str.contains(action)]
+
+    return df
+
+
+def create_figure(df: pd.DataFrame, interval, action):
     # time values for graph
     x_r, x_name, hover, period = get_graph_time_values(interval)
 
-    # graph geration
-    fig = px.line(
-        df_created,
-        x="Date",
-        y="releases",
-        range_x=x_r,
-        labels={"x": x_name, "y": "Releases"},
-        color_discrete_sequence=[color_seq[3]],
+    # create plotly express histogram
+    fig = px.histogram(df, x="created_at", color_discrete_sequence=[color_seq[3]])
+
+    # creates bins with interval size and customizes the hover value for the bars
+    fig.update_traces(
+        xbins_size=interval,
+        hovertemplate=hover + "<br>" + action + " Contributors: %{y}<br><extra></extra>",
+        marker_line_width=0.1,
+        marker_line_color="black",
     )
-    fig.update_traces(hovertemplate=hover + "<br>Releases: %{y}<br>")
+
+    # update xaxes to align for the interval bin size
     fig.update_xaxes(
         showgrid=True,
         ticklabelmode="period",
@@ -190,11 +219,12 @@ def create_figure(df_created: pd.DataFrame, interval):
         rangeslider_yaxis_rangemode="match",
         range=x_r,
     )
+
+    # layout styling
     fig.update_layout(
         xaxis_title=x_name,
-        yaxis_title="Number of Releases",
+        yaxis_title="Committers",
         margin_b=40,
-        margin_r=20,
         font=dict(size=14),
     )
 
