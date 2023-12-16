@@ -3,11 +3,11 @@ import dash
 import dash_bootstrap_components as dbc
 import warnings
 
-from visualizations.issues_closed import gc_issues_closed
-from visualizations.issues_updated import gc_issues_updated
-from visualizations.contributors import gc_contributors
-from visualizations.change_requests_accepted import gc_change_requests_accepted
-from visualizations.committers import gc_committers
+from .visualizations.issues_closed import gc_issues_closed
+from .visualizations.issues_updated import gc_issues_updated
+from .visualizations.contributors import gc_contributors
+from .visualizations.change_requests_accepted import gc_change_requests_accepted
+from .visualizations.committers import gc_committers
 
 # import visualization cards
 

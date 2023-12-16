@@ -7,15 +7,15 @@ import pandas as pd
 import logging
 import plotly.express as px
 from pages.utils.graph_utils import get_graph_time_values, color_seq
+from queries.contributors_query import contributors_query as ctq
+import io
 from cache_manager.cache_manager import CacheManager as cm
 from pages.utils.job_utils import nodata_graph
-import io
 import time
+import app
 
-from queries.release_frequency_query import release_frequency_query as rfq
-
-PAGE = "project_engagement"
-VIZ_ID = "contributors"
+PAGE = "contributors"
+VIZ_ID = "project-engagement"
 
 gc_contributors = dbc.Card(
     [
@@ -30,13 +30,13 @@ gc_contributors = dbc.Card(
                     [
                         dbc.PopoverHeader("Graph Info:"),
                         dbc.PopoverBody(
-                            """
-                            Total number of contributors over a period of time.
-                            """
+                            "Visualizes the growth of contributor base by tracking the arrival of novel contributors over time.\n\
+                            Trend: This view is the total growth of contributors over time \n\
+                            Month/Year: This view looks specifically at the new contributors by selected time bucket."
                         ),
                     ],
                     id=f"popover-{PAGE}-{VIZ_ID}",
-                    target=f"popover-target-{PAGE}-{VIZ_ID}",  # needs to be the same as dbc.Button id
+                    target=f"popover-target-{PAGE}-{VIZ_ID}",
                     placement="top",
                     is_open=False,
                 ),
@@ -48,7 +48,7 @@ gc_contributors = dbc.Card(
                         dbc.Row(
                             [
                                 dbc.Label(
-                                    "Date Interval:",
+                                    "Date Interval",
                                     html_for=f"date-interval-{PAGE}-{VIZ_ID}",
                                     width="auto",
                                 ),
@@ -57,12 +57,8 @@ gc_contributors = dbc.Card(
                                         id=f"date-interval-{PAGE}-{VIZ_ID}",
                                         options=[
                                             {
-                                                "label": "Day",
-                                                "value": "D",
-                                            },
-                                            {
-                                                "label": "Week",
-                                                "value": "W",
+                                                "label": "Trend",
+                                                "value": -1,
                                             },
                                             {"label": "Month", "value": "M"},
                                             {"label": "Year", "value": "Y"},
@@ -99,103 +95,155 @@ gc_contributors = dbc.Card(
     [Input(f"popover-target-{PAGE}-{VIZ_ID}", "n_clicks")],
     [State(f"popover-{PAGE}-{VIZ_ID}", "is_open")],
 )
-def toggle_popover(n, is_open):
+def toggle_popover_1(n, is_open):
     if n:
         return not is_open
     return is_open
 
 
-# callback for commits over time graph
+# callback to dynamically change the graph title
+@callback(
+    Output(f"graph-title-{PAGE}-{VIZ_ID}", "children"),
+    Input(f"date-interval-{PAGE}-{VIZ_ID}", "value"),
+)
+def graph_title(view):
+    title = ""
+    if view == -1:
+        title = "Total Contributors Over Time"
+    elif view == "M":
+        title = "New Contributors by Month"
+    else:
+        title = "New Contributors by Year"
+    return title
+
+
 @callback(
     Output(f"{PAGE}-{VIZ_ID}", "figure"),
     [
         Input("repo-choices", "data"),
         Input(f"date-interval-{PAGE}-{VIZ_ID}", "value"),
+        Input("bot-switch", "value"),
     ],
     background=True,
 )
-def contributors_over_time_graph(repolist, interval):
+def contributor_graph(repolist, interval, bot_switch):
     # wait for data to asynchronously download and become available.
     cache = cm()
-    df = cache.grabm(func=rfq, repos=repolist)
+    df = cache.grabm(func=ctq, repos=repolist)
     while df is None:
         time.sleep(1.0)
-        df = cache.grabm(func=rfq, repos=repolist)
+        df = cache.grabm(func=ctq, repos=repolist)
 
-    print(df)
-
-    # data ready.
+    logging.warning("TOTAL_CONTRIBUTOR_GROWTH_VIZ - START")
     start = time.perf_counter()
-    logging.warning("CONTRIBUTORS_OVER_TIME_VIZ - START")
 
     # test if there is data
     if df.empty:
-        logging.warning("CONTRIBUTORS OVER TIME - NO DATA AVAILABLE")
+        logging.warning("TOTAL_CONTRIBUTOR_GROWTH_VIZ - NO DATA AVAILABLE")
         return nodata_graph
 
+    # remove bot data
+    if bot_switch:
+        df = df[~df["cntrb_id"].isin(app.bots_list)]
+
     # function for all data pre processing
-    df_created = process_data(df, interval)
+    df, df_contribs = process_data(df, interval)
 
-    fig = create_figure(df_created, interval)
+    fig = create_figure(df, df_contribs, interval)
 
-    logging.warning(f"CONTRIBUTORS_OVER_TIME_VIZ - END - {time.perf_counter() - start}")
+    logging.warning(f"TOTAL_CONTRIBUTOR_GROWTH_VIZ - END - {time.perf_counter() - start}")
     return fig
 
 
-def process_data(df: pd.DataFrame, interval):
+def process_data(df, interval):
     # convert to datetime objects with consistent column name
-    # incoming value should be a posix integer.
-    df["date"] = pd.to_datetime(df["date"], utc=True)
-    df.rename(columns={"date": "created"}, inplace=True)
+    df["created_at"] = pd.to_datetime(df["created_at"], utc=True)
+    df.rename(columns={"created_at": "created"}, inplace=True)
 
-    # variable to slice on to handle weekly period edge case
-    period_slice = None
-    if interval == "W":
-        # this is to slice the extra period information that comes with the weekly case
-        period_slice = 10
+    # order from beginning of time to most recent
+    df = df.sort_values("created", axis=0, ascending=True)
 
-    # get the count of commits in the desired interval in pandas period format, sort index to order entries
-    df_created = (
-        df.groupby(by=df.created.dt.to_period(interval))["contributors"]
-        .nunique()
-        .reset_index()
-        .rename(columns={"created": "Date"})
-    )
+    """
+        Assume that the cntrb_id values are unique to individual contributors.
+        Find the first rank-1 contribution of the contributors, saving the created
+        date.
+    """
+
+    # keep only first contributions
+    df = df[df["rank"] == 1]
+
+    # get all of the unique entries by contributor ID
+    df.drop_duplicates(subset=["cntrb_id"], inplace=True)
+    df.reset_index(inplace=True)
+
+    if interval == -1:
+        return df, None
+
+    # get the count of new contributors in the desired interval in pandas period format, sort index to order entries
+    created_range = pd.to_datetime(df["created"]).dt.to_period(interval).value_counts().sort_index()
+
+    # converts to data frame object and creates date column from period values
+    df_contribs = created_range.to_frame().reset_index().rename(columns={"index": "Date", "created": "contribs"})
 
     # converts date column to a datetime object, converts to string first to handle period information
-    # the period slice is to handle weekly corner case
-    df_created["Date"] = pd.to_datetime(df_created["Date"].astype(str).str[:period_slice])
+    df_contribs["Date"] = pd.to_datetime(df_contribs["Date"].astype(str))
 
-    return df_created
+    # correction for year binning -
+    # rounded up to next year so this is a simple patch
+    if interval == "Y":
+        df_contribs["Date"] = df_contribs["Date"].dt.year
+    elif interval == "M":
+        df_contribs["Date"] = df_contribs["Date"].dt.strftime("%Y-%m")
+
+    return df, df_contribs
 
 
-def create_figure(df_created: pd.DataFrame, interval):
+def create_figure(df, df_contribs, interval):
     # time values for graph
     x_r, x_name, hover, period = get_graph_time_values(interval)
 
-    # graph geration
-    fig = px.line(
-        df_created,
-        x="Date",
-        y="Contributors",
-        range_x=x_r,
-        labels={"x": x_name, "y": "Contributors"},
-        color_discrete_sequence=[color_seq[3]],
-    )
-    fig.update_traces(hovertemplate=hover + "<br>Contributors: %{y}<br>")
-    fig.update_xaxes(
-        showgrid=True,
-        ticklabelmode="period",
-        dtick=period,
-        rangeslider_yaxis_rangemode="match",
-        range=x_r,
-    )
+    if interval == -1:
+        fig = px.line(df, x="created", y=df.index, color_discrete_sequence=[color_seq[3]])
+        fig.update_traces(hovertemplate="Contributors: %{y}<br>%{x|%b %d, %Y} <extra></extra>")
+    else:
+        fig = px.bar(
+            df_contribs,
+            x="Date",
+            y="contribs",
+            range_x=x_r,
+            labels={"x": x_name, "y": "Contributors"},
+            color_discrete_sequence=[color_seq[3]],
+        )
+        fig.update_traces(hovertemplate=hover + "<br>Contributors: %{y}<br>")
+
+    """
+        Ref. for this awesome button thing:
+        https://plotly.com/python/range-slider/
+    """
+    # add the date-range selector
     fig.update_layout(
-        xaxis_title=x_name,
+        xaxis=dict(
+            rangeselector=dict(
+                buttons=list(
+                    [
+                        dict(count=1, label="1m", step="month", stepmode="backward"),
+                        dict(count=6, label="6m", step="month", stepmode="backward"),
+                        dict(count=1, label="YTD", step="year", stepmode="todate"),
+                        dict(count=1, label="1y", step="year", stepmode="backward"),
+                        dict(step="all"),
+                    ]
+                )
+            ),
+            rangeslider=dict(visible=True),
+            type="date",
+        )
+    )
+    # label the figure correctly
+    fig.update_layout(
+        xaxis_title="Time",
         yaxis_title="Number of Contributors",
         margin_b=40,
         margin_r=20,
         font=dict(size=14),
     )
-
     return fig

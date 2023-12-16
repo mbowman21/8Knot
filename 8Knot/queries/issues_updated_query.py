@@ -48,11 +48,10 @@ def issues_updated_query(self, repos):
         return None
 
     query_string = f"""
-                    select re.release_name, re.release_id as releases, r.repo_id as id, re.release_published_at as date
-                    from releases re, repo r
-                    where r.repo_id = re.repo_id and re.repo_id in ({str(repos)[1:-1]})
-                    and release_published_at is not NULL 
-                    order by release_published_at
+                    select i.issue_id as issues_updated, r.repo_id as id, i.updated_at as date
+                    from issues i, repo r
+                    where r.repo_id = i.repo_id and i.repo_id in ({str(repos)[1:-1]})
+                    order by date
                 """
 
     try:
@@ -70,6 +69,7 @@ def issues_updated_query(self, repos):
     df = dbm.run_query(query_string)
 
     print(df)
+    print(df.columns)
 
 
     # pandas column and format updates
