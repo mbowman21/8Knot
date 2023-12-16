@@ -12,7 +12,7 @@ from pages.utils.job_utils import nodata_graph
 import io
 import time
 
-from queries.release_frequency_query import release_frequency_query as rfq
+from queries.issues_updated_query import issues_updated_query as iuq
 
 
 PAGE = "project_engagement"
@@ -118,10 +118,10 @@ def toggle_popover(n, is_open):
 def issues_updated_over_time_graph(repolist, interval):
     # wait for data to asynchronously download and become available.
     cache = cm()
-    df = cache.grabm(func=rfq, repos=repolist)
+    df = cache.grabm(func=iuq, repos=repolist)
     while df is None:
         time.sleep(1.0)
-        df = cache.grabm(func=rfq, repos=repolist)
+        df = cache.grabm(func=iuq, repos=repolist)
 
     print(df)
 
@@ -175,10 +175,10 @@ def create_figure(df_created: pd.DataFrame, interval):
     x_r, x_name, hover, period = get_graph_time_values(interval)
 
     # graph geration
-    fig = px.line(
+    fig = px.bar(
         df_created,
         x="Date",
-        y="issues updated",
+        y="issues_updated",
         range_x=x_r,
         labels={"x": x_name, "y": "Issues Updated"},
         color_discrete_sequence=[color_seq[3]],
