@@ -25,12 +25,13 @@ from queries.release_frequency_query import release_frequency_query as rfq
 from queries.change_request_closure_ratio_query import change_request_closure_ratio_query as crcrq
 from queries.issues_closed_query import issues_closed_query as icq
 from queries.issues_updated_query import issues_updated_query as iuq
+from queries.change_requests_accepted_query import change_requests_accepted_query as craq
 import redis
 import flask
 
 
 # list of queries to be run
-QUERIES = [iq, cq, cnq, prq, cmq, iaq, praq, prr, rfq, crcrq, icq, iuq]
+QUERIES = [iq, cq, cnq, prq, cmq, iaq, praq, prr, rfq, crcrq, icq, iuq, craq]
 
 # check if login has been enabled in config
 login_enabled = os.getenv("AUGUR_LOGIN_ENABLED", "False") == "True"
